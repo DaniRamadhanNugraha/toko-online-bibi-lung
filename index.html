@@ -159,6 +159,7 @@ button:disabled {
 ================================================== -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 
 <script>
 /* ==================================================
@@ -167,11 +168,15 @@ button:disabled {
 const firebaseConfig = {
     apiKey: "AIzaSyC_rPyJVJpqreRU_kkF2C_P6G8WOkwd98E",
     authDomain: "toko-online-bibi-lung.firebaseapp.com",
-    projectId: "toko-online-bibi-lung"
+    projectId: "toko-online-bibi-lung",
+    storageBucket: "toko-online-bibi-lung.firebasestorage.app",
+    messagingSenderId: "242623939978",
+    appId: "1:242623939978:web:c1d6235eb4d4006bb77473"
 };
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+const auth = firebase.auth();
 </script>
 </head>
 
@@ -187,6 +192,7 @@ const db = firebase.firestore();
     <!-- ================= LOGIN ADMIN ================= -->
     <div id="login" class="hidden">
         <h2>🔐 Login Admin</h2>
+        <input id="username" type="email" placeholder="Email Admin">
         <input id="pass" type="password" placeholder="Password Admin">
         <button onclick="login()">Masuk</button>
     </div>
@@ -248,15 +254,11 @@ const db = firebase.firestore();
  JAVASCRIPT
 ================================================== -->
 <script>
-/* ================= KONFIG ================= */
-const ADMIN_PASS = "BibiLung@2025";
-
-/* ================= ADMIN SESSION ================= */
-const ADMIN_SESSION_KEY = "adminLoggedIn";
-
 /* ================= DOM ================= */
+const ADMIN_EMAILS = ["admin@bibilung.com"].map(e => e.toLocaleLowerCase()); // GANTI dengan email admin yang diizinkan
 const loginDiv  = document.getElementById("login");
 const adminDiv  = document.getElementById("admin");
+const email = document.getElementById("username");
 const pass = document.getElementById("pass");
 const shopDiv   = document.getElementById("shop");
 const productsEl = document.getElementById("products");
@@ -268,28 +270,35 @@ const pName  = document.getElementById("pName");
 const pPrice = document.getElementById("pPrice");
 const pImage = document.getElementById("pImage");
 const pSpec  = document.getElementById("pSpec");
+const safe = s =>
+    String(s || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+
 
 /* ================= DATA ================= */
 let products = []; // data akan DIISI dari Firestore
 let cart = [];
 let unsubscribeOrders = null;
+let ordersLoaded = false;
 
 /* ================= MODE ================= */
 function renderMode() {
-    const isAdminSession =
-        sessionStorage.getItem(ADMIN_SESSION_KEY) === "true";
-    let ordersRendered = false;
-
     loginDiv.classList.add("hidden");
     adminDiv.classList.add("hidden");
     shopDiv.classList.add("hidden");
 
     if (location.hash === "#admin") {
+        const user = auth.currentUser;
+        const isAdminSession = user && ADMIN_EMAILS.includes(user.email);
+
         if (isAdminSession) {
             adminDiv.classList.remove("hidden");
-            if (!ordersRendered) {
+            if (!ordersLoaded) {
                 renderOrders();
-                ordersRendered = true;
+                ordersLoaded = true;
             }
             renderAdmin();
         } else {
@@ -308,12 +317,26 @@ function renderMode() {
 
 /* ================= AUTH ================= */
 function login() {
-    if (pass.value === ADMIN_PASS) {
-        sessionStorage.setItem(ADMIN_SESSION_KEY, "true");
-        renderMode();
-    } else {
-        alert("Password admin salah");
+    if (!email.value || !pass.value) {
+        alert("Email dan password wajib diisi");
+        return;
     }
+
+    auth.signInWithEmailAndPassword(
+        email.value.trim(),
+        pass.value.trim()
+    )
+    .then(({ user }) => {
+        if (!ADMIN_EMAILS.includes(user.email)) {
+            auth.signOut();
+            alert("Hanya admin yang boleh masuk");
+            return;
+        }
+        location.hash = "#admin";
+    })
+    .catch(err => {
+        alert("Login gagal: " + err.message);
+    });
 }
 
 function logout() {
@@ -321,9 +344,12 @@ function logout() {
         unsubscribeOrders();
         unsubscribeOrders = null;
     }
-    sessionStorage.removeItem(ADMIN_SESSION_KEY);
-    location.hash = "";
-    renderMode();
+    auth.signOut().then(() => {
+        location.hash = "";
+        renderMode();
+        ordersLoaded = false;
+        alert("Berhasil logout");
+    });
 }
 
 /* ================= FIREBASE PRODUK ================= */
@@ -348,8 +374,7 @@ function loadProducts() {
             renderShop();
         
             if (
-                location.hash === "#admin" &&
-                sessionStorage.getItem(ADMIN_SESSION_KEY) === "true"
+                location.hash === "#admin"
             ) {
                 renderAdmin();
             }
@@ -361,23 +386,34 @@ function loadProducts() {
 }
 
 function addProduct() {
+    const img = pImage.value.trim();
+
     if (!pName.value || !pPrice.value || Number(pPrice.value) <= 0) {
         alert("Nama dan harga wajib diisi");
+        return;
+    }
+    if (pSpec.value.trim().length < 3) {
+        alert("Spesifikasi minimal 1 baris");
         return;
     }
 
     db.collection("products").add({
         name: pName.value,
         price: Number(pPrice.value),
-        image: pImage.value || "",
+        image: img.startsWith("http") ? img : "",
         spec: pSpec.value,
         stock: true
+    })
+    .then(() => {
+        pName.value = "";
+        pPrice.value = "";
+        pImage.value = "";
+        pSpec.value = "";
+    })
+    .catch(err => {
+        alert("Gagal menambah produk");
+        console.error(err);
     });
-
-    pName.value = "";
-    pPrice.value = "";
-    pImage.value = "";
-    pSpec.value = "";
 }
 
 /* ================= RENDER ================= */
@@ -393,7 +429,7 @@ function renderShop() {
         const specs = (p.spec || "")
             .split("\n")
             .filter(s => s.trim())
-            .map(s => `<li>${s}</li>`)
+            .map(s => `<li>${safe(s)}</li>`)
             .join("");
 
         const stockText = p.stock ? "Tersedia" : "Habis";
@@ -401,14 +437,14 @@ function renderShop() {
 
         html += `
         <div class="card">
-            <img src="${p.image || 'https://via.placeholder.com/300x200?text=No+Image'}" alt="${p.name || 'Produk'}"
+            <img src="${p.image || 'https://via.placeholder.com/300x200?text=No+Image'}" alt="${safe(p.name || 'Produk')}"
                  onerror="this.src='https://via.placeholder.com/300x200?text=No+Image'">
 
-            <h3>${p.name}</h3>
+            <h3>${safe(p.name)}</h3>
 
             <ul class="spec-list">${specs}</ul>
 
-            <div class="price">Rp ${Number(p.price).toLocaleString()}</div>
+            <div class="price">Rp ${(Number(p.price) || 0).toLocaleString()}</div>
 
             <div class="stock ${stockClass}">
                 Status: ${stockText}
@@ -426,6 +462,7 @@ function renderShop() {
 }
 
 function renderAdmin() {
+    if (!auth.currentUser) return;
     let html = "";
 
     if (products.length === 0) {
@@ -439,9 +476,9 @@ function renderAdmin() {
             <img src="${p.image || 'https://via.placeholder.com/300x200?text=No+Image'}" style="width:100%;height:120px;object-fit:cover">
             <p>Status: ${p.stock ? "Tersedia" : "Habis"}</p>
             
-            <input value="${p.name}" onchange="update('${p.id}','name',this.value)">
+            <input value="${safe(p.name)}" onchange="update('${p.id}','name',this.value)">
             <input type="number" value="${Number(p.price)}" onchange="update('${p.id}','price',Number(this.value))">
-            <textarea onchange="update('${p.id}','spec',this.value)">${p.spec||""}</textarea>
+            <textarea onchange="update('${p.id}','spec',this.value)">${safe(p.spec)}</textarea>
             
             <button class="delete" onclick="remove('${p.id}')">Hapus</button>
             <button onclick="toggleStock('${p.id}', ${p.stock})">
@@ -457,6 +494,7 @@ function renderOrders() {
         unsubscribeOrders();
         unsubscribeOrders = null;
     }
+    ordersLoaded = true;
 
     const orderList = document.getElementById("orderList");
     orderList.innerHTML = "Memuat pesanan...";
@@ -534,7 +572,7 @@ function renderCart() {
 }
 
 function update(id, field, value) {
-    if (value === "" || value === null || value === undefined || Number.isNaN(value)) {
+    if (value === null || value === undefined) {
         alert("Nilai tidak valid");
         return;
     }
@@ -542,7 +580,15 @@ function update(id, field, value) {
         alert("Harga harus lebih dari 0");
         return;
     }
-    db.collection("products").doc(id).update({ [field]: value });
+    if ((field === "name" || field === "spec") && value.trim() === "") {
+        alert("Nama atau spesifikasi tidak boleh kosong");
+        return;
+    }
+    db.collection("products").doc(id).update({ [field]: value })
+    .catch(err => {
+        alert("Gagal update produk");
+        console.error(err);
+    });
 }
 
 function remove(id) {
@@ -564,6 +610,7 @@ function addToCart(id) {
         alert("Produk tidak ditemukan atau sudah dihapus");
         return;
     }
+    if (!p.stock) return;
 
     const existing = cart.find(i => i.id === p.id);
     if (existing) {
@@ -597,8 +644,8 @@ function checkout() {
         return;
     }
 
-    if (!buyerName.value.trim()) {
-        alert("Nama pembeli wajib diisi");
+    if (buyerName.value.trim().length < 3) {
+        alert("Nama pembeli wajib diisi minimal 3 karakter");
         btn.disabled = false;
         return;
     }
@@ -617,7 +664,7 @@ function checkout() {
         status: "baru"
     };
 
-    firebase.firestore().runTransaction(async tx => {
+    db.runTransaction(async tx => {
         for (let item of cartSnapshot) {
             const ref = db.collection("products").doc(item.id);
             const snap = await tx.get(ref);
@@ -636,7 +683,7 @@ function checkout() {
         cart = [];
         renderCart();
 
-        let msg = `Halo Bibi Lung 👋
+        let msg = `Halo Bibi Lung
 Saya ingin membeli barang berikut:
 
 Nama Pembeli: ${order.buyer}
@@ -646,7 +693,7 @@ Daftar Barang:
         `;
 
         order.items.forEach(i => {
-            msg += `<li><ul> ${i.name} × ${i.qty} (Rp ${i.price.toLocaleString()})</ul></li>\n`;
+            msg += `- ${i.name} × ${i.qty} (Rp ${i.price.toLocaleString()})\n`;
         });
 
         msg += `\nTotal: Rp ${order.total.toLocaleString()}`;
@@ -670,6 +717,11 @@ document.addEventListener("DOMContentLoaded", () => {
     loadProducts(); // SELALU load produk, admin & pembeli
     renderCart();
     document.getElementById("checkoutBtn").disabled = true;
+});
+
+auth.onAuthStateChanged(user => {
+    ordersLoaded = false;
+    renderMode();
 });
 
 window.addEventListener("hashchange", renderMode);
