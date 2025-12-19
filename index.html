@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>Toko Online Bibi Lung</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<!-- ==================================================
+ CSS : TEMA & GLOBAL
+================================================== -->
+<style>
+:root {
+    --primary: #1abc9c;
+    --danger: #e74c3c;
+    --warning: #f39c12;
+    --bg: #f4f6f8;
+    --dark: #2c3e50;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: var(--bg);
+}
+
+/* ==================================================
+ HEADER
+================================================== */
+header {
+    background: linear-gradient(135deg, #1abc9c, #16a085);
+    color: white;
+    padding: 20px;
+    text-align: center;
+}
+
+/* ==================================================
+ LAYOUT
+================================================== */
+.container {
+    max-width: 1200px;
+    margin: auto;
+    padding: 16px;
+}
+
+.hidden {
+    display: none;
+}
+
+#loading {
+    text-align: center;
+    padding: 20px;
+    color: #777;
+}
+
+/* ==================================================
+ GRID RESPONSIVE
+================================================== */
+.grid {
+    display: grid;
+    gap: 16px;
+}
+
+@media (min-width: 600px) {
+    .grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 900px) {
+    .grid { grid-template-columns: repeat(3, 1fr); }
+}
+@media (min-width: 1200px) {
+    .grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* ==================================================
+ CARD PRODUK
+================================================== */
+.card {
+    background: white;
+    border-radius: 10px;
+    padding: 12px;
+    box-shadow: 0 4px 10px rgba(0,0,0,.08);
+}
+
+.card img {
+    width: 100%;
+    height: 180px;
+    object-fit: cover;
+    border-radius: 8px;
+    margin-bottom: 10px;
+}
+
+.order-card {
+    background: #fff;
+    padding: 12px;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.08);
+}
+
+.price {
+    color: var(--primary);
+    font-weight: bold;
+}
+
+.stock {
+    font-size: 14px;
+    font-weight: bold;
+    margin: 6px 0;
+}
+
+.stock.available {
+    color: #27ae60;
+}
+
+.stock.out {
+    color: #e74c3c;
+}
+
+.spec-list {
+    padding-left: 18px;
+    font-size: 14px;
+}
+
+/* ==================================================
+ FORM & BUTTON
+================================================== */
+input,
+textarea {
+    width: 100%;
+    padding: 8px;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+}
+
+button {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    background: var(--primary);
+    color: white;
+}
+
+button.delete { background: var(--danger); }
+button.logout { background: var(--warning); }
+button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+</style>
+
+<!-- ==================================================
+ FIREBASE SDK
+================================================== -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<script>
+/* ==================================================
+ FIREBASE CONFIG
+================================================== */
+const firebaseConfig = {
+    apiKey: "AIzaSyC_rPyJVJpqreRU_kkF2C_P6G8WOkwd98E",
+    authDomain: "toko-online-bibi-lung.firebaseapp.com",
+    projectId: "toko-online-bibi-lung"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+</script>
+</head>
+
+<body>
+
+<header>
+    <h1>Toko Online Bibi Lung</h1>
+    <p>Barang bekas berkualitas & terpercaya</p>
+</header>
+
+<div class="container">
+
+    <!-- ================= LOGIN ADMIN ================= -->
+    <div id="login" class="hidden">
+        <h2>🔐 Login Admin</h2>
+        <input id="pass" type="password" placeholder="Password Admin">
+        <button onclick="login()">Masuk</button>
+    </div>
+
+    <!-- ================= PANEL ADMIN ================= -->
+    <div id="admin" class="hidden">
+        <h2>🛠 Panel Admin</h2>
+
+        <button class="logout" onclick="logout()">Logout</button>
+
+        <h3>➕ Tambah Produk</h3>
+        <p style="font-size:14px;color:#555;">
+        ℹ️ Tips Admin:</p>
+        <ul>
+            <li>Gunakan link gambar langsung (imgbb)</li>
+            <li>Spesifikasi: 1 baris = 1 poin</li>
+            <li>Stok bisa ditandai habis kapan saja</li>
+        </ul>
+
+        <input id="pName" placeholder="Nama Produk">
+        <input id="pPrice" type="number" placeholder="Harga">
+        <input id="pImage" placeholder="Link Gambar (imgbb)">
+        <textarea id="pSpec" placeholder="Spesifikasi (1 baris per poin)"></textarea>
+        <button onclick="addProduct()">Simpan</button>
+
+        <h3>📦 Kelola Produk</h3>
+        <div id="adminProducts" class="grid"></div>
+
+        <h3>🔔 Notifikasi Pesanan</h3>
+        <div id="orderList"></div>
+    </div>
+
+    <!-- ================= TOKO PEMBELI ================= -->
+    <div id="shop">
+        <h2>🛒 Produk</h2>
+        <div id="products" class="grid"></div>
+        <div id="loading">⏳ Memuat produk...</div>
+
+        <!-- ================= DATA PEMBELI ================= -->
+        <h3>🧑 Data Pembeli</h3>
+
+        <input
+            id="buyerName"
+            type="text"
+            placeholder="Nama Pembeli">
+        <textarea
+            id="buyerNote"
+            placeholder="Catatan (opsional, contoh: COD sore, cek kondisi dulu)">
+        </textarea>
+
+        <h2>🧺 Keranjang</h2>
+        <div id="cart"></div>
+        <button id="checkoutBtn" onclick="checkout()">Checkout via WhatsApp</button>
+    </div>
+
+</div>
+
+<!-- ==================================================
+ JAVASCRIPT
+================================================== -->
+<script>
+/* ================= KONFIG ================= */
+const ADMIN_PASS = "BibiLung@2025";
+
+/* ================= ADMIN SESSION ================= */
+const ADMIN_SESSION_KEY = "adminLoggedIn";
+
+/* ================= DOM ================= */
+const loginDiv  = document.getElementById("login");
+const adminDiv  = document.getElementById("admin");
+const pass = document.getElementById("pass");
+const shopDiv   = document.getElementById("shop");
+const productsEl = document.getElementById("products");
+const adminProductsEl = document.getElementById("adminProducts");
+const cartDiv = document.getElementById("cart");
+const buyerName = document.getElementById("buyerName");
+const buyerNote = document.getElementById("buyerNote");
+const pName  = document.getElementById("pName");
+const pPrice = document.getElementById("pPrice");
+const pImage = document.getElementById("pImage");
+const pSpec  = document.getElementById("pSpec");
+
+/* ================= DATA ================= */
+let products = []; // data akan DIISI dari Firestore
+let cart = [];
+let unsubscribeOrders = null;
+
+/* ================= MODE ================= */
+function renderMode() {
+    const isAdminSession =
+        sessionStorage.getItem(ADMIN_SESSION_KEY) === "true";
+    let ordersRendered = false;
+
+    loginDiv.classList.add("hidden");
+    adminDiv.classList.add("hidden");
+    shopDiv.classList.add("hidden");
+
+    if (location.hash === "#admin") {
+        if (isAdminSession) {
+            adminDiv.classList.remove("hidden");
+            if (!ordersRendered) {
+                renderOrders();
+                ordersRendered = true;
+            }
+            renderAdmin();
+        } else {
+            loginDiv.classList.remove("hidden");
+        }
+    } else {
+        if (unsubscribeOrders) {
+            unsubscribeOrders();
+            unsubscribeOrders = null;
+        }
+        cart = [];
+        renderCart();
+        shopDiv.classList.remove("hidden");
+    }
+}
+
+/* ================= AUTH ================= */
+function login() {
+    if (pass.value === ADMIN_PASS) {
+        sessionStorage.setItem(ADMIN_SESSION_KEY, "true");
+        renderMode();
+    } else {
+        alert("Password admin salah");
+    }
+}
+
+function logout() {
+    if (unsubscribeOrders) {
+        unsubscribeOrders();
+        unsubscribeOrders = null;
+    }
+    sessionStorage.removeItem(ADMIN_SESSION_KEY);
+    location.hash = "";
+    renderMode();
+}
+
+/* ================= FIREBASE PRODUK ================= */
+const loadingEl = document.getElementById("loading");
+let unsubscribeProducts = null;
+
+function loadProducts() {
+    loadingEl.style.display = "block";
+    if (unsubscribeProducts) {
+        unsubscribeProducts();
+        unsubscribeProducts = null;
+    }
+
+    unsubscribeProducts = db.collection("products")
+        .onSnapshot(snapshot => {
+            products = snapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data()
+            }));
+
+            loadingEl.style.display = "none";
+            renderShop();
+        
+            if (
+                location.hash === "#admin" &&
+                sessionStorage.getItem(ADMIN_SESSION_KEY) === "true"
+            ) {
+                renderAdmin();
+            }
+
+        }, error => {
+            console.error("Gagal sync produk:", error);
+            loadingEl.style.display = "none";
+        });
+}
+
+function addProduct() {
+    if (!pName.value || !pPrice.value || Number(pPrice.value) <= 0) {
+        alert("Nama dan harga wajib diisi");
+        return;
+    }
+
+    db.collection("products").add({
+        name: pName.value,
+        price: Number(pPrice.value),
+        image: pImage.value || "",
+        spec: pSpec.value,
+        stock: true
+    });
+
+    pName.value = "";
+    pPrice.value = "";
+    pImage.value = "";
+    pSpec.value = "";
+}
+
+/* ================= RENDER ================= */
+function renderShop() {
+    let html = "";
+    
+    if (products.length === 0) {
+        productsEl.innerHTML = "<p>📦 Tidak ada produk tersedia</p>";
+        return;
+    }
+
+    products.forEach((p, i) => {
+        const specs = (p.spec || "")
+            .split("\n")
+            .filter(s => s.trim())
+            .map(s => `<li>${s}</li>`)
+            .join("");
+
+        const stockText = p.stock ? "Tersedia" : "Habis";
+        const stockClass = p.stock ? "available" : "out";
+
+        html += `
+        <div class="card">
+            <img src="${p.image || 'https://via.placeholder.com/300x200?text=No+Image'}" alt="${p.name || 'Produk'}"
+                 onerror="this.src='https://via.placeholder.com/300x200?text=No+Image'">
+
+            <h3>${p.name}</h3>
+
+            <ul class="spec-list">${specs}</ul>
+
+            <div class="price">Rp ${Number(p.price).toLocaleString()}</div>
+
+            <div class="stock ${stockClass}">
+                Status: ${stockText}
+            </div>
+
+            <button
+                ${p.stock ? "" : "disabled"}
+                onclick="addToCart('${p.id}')">
+                ${p.stock ? "Tambah ke Keranjang" : "Stok Habis"}
+            </button>
+        </div>`;
+    });
+
+    productsEl.innerHTML = html; // ✅ SATU KALI SAJA
+}
+
+function renderAdmin() {
+    let html = "";
+
+    if (products.length === 0) {
+        adminProductsEl.innerHTML = "<p>Belum ada produk</p>";
+        return;
+    }
+
+    products.forEach(p => {
+        html += `
+        <div class="card">
+            <img src="${p.image || 'https://via.placeholder.com/300x200?text=No+Image'}" style="width:100%;height:120px;object-fit:cover">
+            <p>Status: ${p.stock ? "Tersedia" : "Habis"}</p>
+            
+            <input value="${p.name}" onchange="update('${p.id}','name',this.value)">
+            <input type="number" value="${Number(p.price)}" onchange="update('${p.id}','price',Number(this.value))">
+            <textarea onchange="update('${p.id}','spec',this.value)">${p.spec||""}</textarea>
+            
+            <button class="delete" onclick="remove('${p.id}')">Hapus</button>
+            <button onclick="toggleStock('${p.id}', ${p.stock})">
+                ${p.stock ? "Tandai Habis" : "Tandai Tersedia"}
+            </button>
+        </div>`;
+    });
+    adminProductsEl.innerHTML = html;
+}
+
+function renderOrders() {
+    if (unsubscribeOrders) {
+        unsubscribeOrders();
+        unsubscribeOrders = null;
+    }
+
+    const orderList = document.getElementById("orderList");
+    orderList.innerHTML = "Memuat pesanan...";
+
+        unsubscribeOrders = db.collection("orders")
+            .orderBy("createdAt", "desc")
+            .onSnapshot(snapshot => {
+                let html = "";
+
+                if (snapshot.empty) {
+                    orderList.innerHTML = "<p>Belum ada pesanan</p>";
+                    return;
+                }
+
+                snapshot.forEach(doc => {
+                    const o = doc.data();
+                    const items = o.items || [];
+
+                    html += `
+                    <div class="order-card">
+                        <small>${o.createdAt?.toDate().toLocaleString() || ""}</small>
+                        <ul>
+                            ${items.map(i => `
+                                <li>${i.name} (${i.id}) × ${i.qty}</li>
+                            `).join("")}
+                        </ul>
+                        <b>Total: Rp ${Number(o.total).toLocaleString()}</b>
+                        <p>Status: ${o.status}</p>
+                    </div>`;
+                });
+                orderList.innerHTML = html;
+            }, error => {
+                orderList.innerHTML = "<p>Gagal memuat pesanan</p>";
+                console.error(error);
+        });
+}
+
+function renderCart() {
+    let html = "";
+    let total = 0;
+
+    if (cart.length === 0) {
+        cartDiv.innerHTML = "<p>Keranjang masih kosong</p>";
+        document.getElementById("checkoutBtn").disabled = true;
+        return;
+    }
+
+    cart.forEach((item, index) => {
+        total += item.price * item.qty;
+
+        html += `
+            <div class="card">
+                <b>${item.name} × ${item.qty}</b><br>
+                <small>Rp ${Number(item.price).toLocaleString()}</small>
+                <button
+                    class="delete"
+                    style="margin-top:6px"
+                    onclick="removeFromCart('${item.id}')">
+                    Hapus
+                </button>
+            </div>
+        `;
+    });
+
+    html += `
+        <div class="card">
+            <b>Total: Rp ${total.toLocaleString()}</b>
+        </div>
+    `;
+
+    cartDiv.innerHTML = html;
+
+    const checkoutBtn = document.getElementById("checkoutBtn");
+    checkoutBtn.disabled = cart.length === 0;
+}
+
+function update(id, field, value) {
+    if (value === "" || value === null || value === undefined || Number.isNaN(value)) {
+        alert("Nilai tidak valid");
+        return;
+    }
+    if (field === "price" && value <= 0) {
+        alert("Harga harus lebih dari 0");
+        return;
+    }
+    db.collection("products").doc(id).update({ [field]: value });
+}
+
+function remove(id) {
+    if (confirm("Hapus produk?")) {
+        db.collection("products").doc(id).delete();
+    }
+}
+
+function toggleStock(id, currentStock) {
+    db.collection("products").doc(id).update({
+        stock: !currentStock
+    });
+}
+
+/* ================= CART ================= */
+function addToCart(id) {
+    const p = products.find(p => p.id === id);
+    if (!p) {
+        alert("Produk tidak ditemukan atau sudah dihapus");
+        return;
+    }
+
+    const existing = cart.find(i => i.id === p.id);
+    if (existing) {
+        alert("Produk sudah ada di keranjang");
+        return; // Tampilkan qty: 1
+    } else {
+        cart.push({
+            id: p.id,
+            name: p.name,
+            price: p.price,
+            qty: 1
+        });
+    }
+
+    renderCart();
+}
+
+function removeFromCart(id) {
+    cart = cart.filter(i => i.id !== id);
+    renderCart();
+}
+
+function checkout() {
+    const cartSnapshot = [...cart];
+    const btn = document.getElementById("checkoutBtn");
+    btn.disabled = true;
+
+    if (cart.length === 0) {
+        alert("🧺 Keranjang masih kosong, silakan pilih produk dulu");
+        btn.disabled = false;
+        return;
+    }
+
+    if (!buyerName.value.trim()) {
+        alert("Nama pembeli wajib diisi");
+        btn.disabled = false;
+        return;
+    }
+
+    //for (let item of cartSnapshot) {
+    //    const p = products.find(p => p.id === item.id);
+    //    if (!p || !p.stock) {
+    //        alert(`Produk "${item.name}" sudah habis`);
+    //        return;
+    //    }
+    //}
+
+    const order = {
+        buyer: buyerName.value.trim(),
+        note: buyerNote.value || "-",
+        items: cartSnapshot.map(i => ({
+            id: i.id,
+            name: i.name,
+            price: i.price,
+            qty: i.qty
+        })),
+        total: cartSnapshot.reduce((s, i) => s + i.price * i.qty, 0),
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        status: "baru"
+    };
+
+    firebase.firestore().runTransaction(async tx => {
+        for (let item of cartSnapshot) {
+            const ref = db.collection("products").doc(item.id);
+            const snap = await tx.get(ref);
+
+            if (!snap.exists || !snap.data().stock) {
+                throw new Error(`Produk ${item.name} habis`);
+            }
+
+            tx.update(ref, { stock: false });
+        }
+
+        tx.set(db.collection("orders").doc(), order);
+    })
+    .then(() => {
+        alert("Pesanan berhasil dibuat!");
+        cart = [];
+        renderCart();
+
+        let msg = `Halo Bibi Lung 👋
+        Saya ingin membeli barang berikut:
+
+        Nama Pembeli: ${order.buyer}
+        Catatan: ${order.note}
+
+        Daftar Barang:
+        `;
+
+        order.items.forEach(i => {
+            msg += `- ${i.name} × ${i.qty} (Rp ${i.price.toLocaleString()})\n`;
+        });
+
+        msg += `\nTotal: Rp ${order.total.toLocaleString()}`;
+
+        window.open(
+            "https://wa.me/628112268020?text=" + encodeURIComponent(msg) // WhatsApp number Bibi Lung
+        );
+
+        buyerName.value = "";
+        buyerNote.value = "";
+        document.getElementById("checkoutBtn").disabled = true;
+    })
+    .catch(err => {
+        alert(err.message);
+        btn.disabled = false;
+    });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    renderMode();
+    loadProducts(); // SELALU load produk, admin & pembeli
+    renderCart();
+    document.getElementById("checkoutBtn").disabled = true;
+});
+
+window.addEventListener("hashchange", renderMode);
+</script>
+
+</body>
+</html>
