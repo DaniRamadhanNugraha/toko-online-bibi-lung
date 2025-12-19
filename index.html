@@ -603,17 +603,9 @@ function checkout() {
         return;
     }
 
-    //for (let item of cartSnapshot) {
-    //    const p = products.find(p => p.id === item.id);
-    //    if (!p || !p.stock) {
-    //        alert(`Produk "${item.name}" sudah habis`);
-    //        return;
-    //    }
-    //}
-
     const order = {
         buyer: buyerName.value.trim(),
-        note: buyerNote.value || "-",
+        note: buyerNote.value || "",
         items: cartSnapshot.map(i => ({
             id: i.id,
             name: i.name,
@@ -654,7 +646,7 @@ Daftar Barang:
         `;
 
         order.items.forEach(i => {
-            msg += `- ${i.name} × ${i.qty} (Rp ${i.price.toLocaleString()})\n`;
+            msg += `\n- ${i.name} × ${i.qty} (Rp ${i.price.toLocaleString()})\n`;
         });
 
         msg += `\nTotal: Rp ${order.total.toLocaleString()}`;
