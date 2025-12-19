@@ -645,12 +645,12 @@ function checkout() {
         renderCart();
 
         let msg = `Halo Bibi Lung 👋
-        Saya ingin membeli barang berikut:
+Saya ingin membeli barang berikut:
 
-        Nama Pembeli: ${order.buyer}
-        Catatan: ${order.note}
+Nama Pembeli: ${order.buyer}
+Catatan: ${order.note}
 
-        Daftar Barang:
+Daftar Barang:
         `;
 
         order.items.forEach(i => {
@@ -681,6 +681,19 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 window.addEventListener("hashchange", renderMode);
+</script>
+
+<!-- ==================================================
+    SERVICE WORKER
+================================================== -->
+<script>
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("./sw.js")
+      .then(() => console.log("Service Worker aktif"))
+      .catch(err => console.error("SW gagal:", err));
+  });
+}
 </script>
 
 </body>
