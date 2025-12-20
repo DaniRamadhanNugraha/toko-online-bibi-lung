@@ -191,9 +191,44 @@ const auth = firebase.auth();
 <header>
     <h1>Toko Online Bibi Lung</h1>
     <p>Barang bekas berkualitas & terpercaya</p>
+    <button id="installBtn"
+        style="display:none; margin-top:10px;">
+    📲 Install Aplikasi
+</button>
+
 </header>
 
 <div class="container">
+
+    <!-- ================= UPDATE BANNER ================= -->
+    <div id="updateBanner"
+            style="
+            display:none;
+            position:fixed;
+            bottom:20px;
+            left:50%;
+            transform:translateX(-50%);
+            background:#2c3e50;
+            color:white;
+            padding:12px 16px;
+            border-radius:10px;
+            box-shadow:0 4px 12px rgba(0,0,0,.2);
+            z-index:9999;
+            ">
+            🔄 Versi baru tersedia
+        <button id="updateBtn"
+                style="
+                    margin-left:10px;
+                    padding:6px 10px;
+                    border:none;
+                    border-radius:6px;
+                    background:#1abc9c;
+                    color:white;
+                    cursor:pointer;
+                ">
+            Update
+        </button>
+    </div>
 
     <!-- ================= LOGIN ADMIN ================= -->
     <div id="login" class="hidden">
@@ -261,7 +296,7 @@ const auth = firebase.auth();
 ================================================== -->
 <script>
 /* ================= DOM ================= */
-const ADMIN_EMAILS = ["admin@bibilung.com"].map(e => e.toLocaleLowerCase()); // GANTI dengan email admin yang diizinkan
+const ADMIN_EMAILS = ["admin@bibilung.com"].map(e => e.toLowerCase()); // GANTI dengan email admin yang diizinkan
 const loginDiv  = document.getElementById("login");
 const adminDiv  = document.getElementById("admin");
 const email = document.getElementById("username");
@@ -288,24 +323,30 @@ const safe = s =>
 let products = []; // data akan DIISI dari Firestore
 let cart = [];
 let unsubscribeOrders = null;
-let ordersLoaded = false;
+let isCheckingOut = false;
 
 /* ================= MODE ================= */
 function renderMode() {
+    if (location.hash === "#admin" && auth.currentUser === undefined) {
+        return;
+    }
+
     loginDiv.classList.add("hidden");
     adminDiv.classList.add("hidden");
     shopDiv.classList.add("hidden");
 
+    if (location.hash === "#admin" && !auth.currentUser) {
+        loginDiv.classList.remove("hidden");
+        return;
+    }
+
     if (location.hash === "#admin") {
         const user = auth.currentUser;
-        const isAdminSession = user && ADMIN_EMAILS.includes(user.email);
+        const isAdminSession = user && ADMIN_EMAILS.includes(user.email.toLowerCase());
 
         if (isAdminSession) {
             adminDiv.classList.remove("hidden");
-            if (!ordersLoaded) {
-                renderOrders();
-                ordersLoaded = true;
-            }
+            renderOrders();
             renderAdmin();
         } else {
             loginDiv.classList.remove("hidden");
@@ -315,9 +356,9 @@ function renderMode() {
             unsubscribeOrders();
             unsubscribeOrders = null;
         }
-        cart = [];
-        renderCart();
         shopDiv.classList.remove("hidden");
+        cart = JSON.parse(localStorage.getItem("cart") || "[]");
+        renderCart();
     }
 }
 
@@ -333,7 +374,7 @@ function login() {
         pass.value.trim()
     )
     .then(({ user }) => {
-        if (!ADMIN_EMAILS.includes(user.email)) {
+        if (!ADMIN_EMAILS.includes(user.email.toLowerCase())) {
             auth.signOut();
             alert("Hanya admin yang boleh masuk");
             return;
@@ -353,7 +394,6 @@ function logout() {
     auth.signOut().then(() => {
         location.hash = "";
         renderMode();
-        ordersLoaded = false;
         alert("Berhasil logout");
     });
 }
@@ -376,6 +416,14 @@ function loadProducts() {
                 ...doc.data()
             }));
 
+            // 🔧 FILTER CART SETELAH PRODUCTS TERISI
+            cart = cart.filter(item => {
+                const p = products.find(p => p.id === item.id);
+                return p && p.stock > 0;
+            });
+            localStorage.setItem("cart", JSON.stringify(cart));
+            renderCart();
+
             loadingEl.style.display = "none";
             renderShop();
         
@@ -389,6 +437,8 @@ function loadProducts() {
             console.error("Gagal sync produk:", error);
             loadingEl.style.display = "none";
         });
+    
+
 }
 
 function addProduct() {
@@ -404,11 +454,11 @@ function addProduct() {
     }
 
     db.collection("products").add({
-        name: pName.value,
+        name: pName.value.trim(),
         price: Number(pPrice.value),
         image: img.startsWith("http") ? img : "",
-        spec: pSpec.value,
-        stock: true
+        spec: pSpec.value.trim(),
+        stock: 1 // Angka awal = tersedia
     })
     .then(() => {
         pName.value = "";
@@ -438,8 +488,8 @@ function renderShop() {
             .map(s => `<li>${safe(s)}</li>`)
             .join("");
 
-        const stockText = p.stock ? "Tersedia" : "Habis";
-        const stockClass = p.stock ? "available" : "out";
+        const stockText = p.stock > 0 ? `Stok: ${p.stock}` : "Habis";
+        const stockClass = p.stock > 0 ? "available" : "out";
 
         html += `
         <div class="card">
@@ -457,9 +507,9 @@ function renderShop() {
             </div>
 
             <button
-                ${p.stock ? "" : "disabled"}
+                ${p.stock > 0 ? "" : "disabled"}
                 onclick="addToCart('${p.id}')">
-                ${p.stock ? "Tambah ke Keranjang" : "Stok Habis"}
+                ${p.stock > 0 ? "Tambah ke Keranjang" : "Stok Habis"}
             </button>
         </div>`;
     });
@@ -468,7 +518,10 @@ function renderShop() {
 }
 
 function renderAdmin() {
-    if (!auth.currentUser) return;
+    if (
+        !auth.currentUser ||
+        !ADMIN_EMAILS.includes(auth.currentUser.email.toLowerCase())
+    ) return;
     let html = "";
 
     if (products.length === 0) {
@@ -480,15 +533,15 @@ function renderAdmin() {
         html += `
         <div class="card">
             <img src="${p.image || 'https://via.placeholder.com/300x200?text=No+Image'}" style="width:100%;height:120px;object-fit:cover">
-            <p>Status: ${p.stock ? "Tersedia" : "Habis"}</p>
+            <p>Status: ${p.stock > 0 ? "Tersedia" : "Habis"} (${p.stock})</p>
             
             <input value="${safe(p.name)}" onchange="update('${p.id}','name',this.value)">
-            <input type="number" value="${Number(p.price)}" onchange="update('${p.id}','price',Number(this.value))">
+            <input type="number" min="1" value="${Number(p.price)}" onchange="update('${p.id}','price',Number(this.value))">
             <textarea onchange="update('${p.id}','spec',this.value)">${safe(p.spec)}</textarea>
             
             <button class="delete" onclick="remove('${p.id}')">Hapus</button>
             <button onclick="toggleStock('${p.id}', ${p.stock})">
-                ${p.stock ? "Tandai Habis" : "Tandai Tersedia"}
+                ${p.stock > 0 ? "Tandai Habis" : "Tandai Tersedia"}
             </button>
         </div>`;
     });
@@ -500,7 +553,6 @@ function renderOrders() {
         unsubscribeOrders();
         unsubscribeOrders = null;
     }
-    ordersLoaded = true;
 
     const orderList = document.getElementById("orderList");
     orderList.innerHTML = "Memuat pesanan...";
@@ -521,7 +573,10 @@ function renderOrders() {
 
                     html += `
                     <div class="order-card">
-                        <small>${o.createdAt?.toDate().toLocaleString() || ""}</small>
+                        <small>${o.createdAt?.toDate()
+                            ? o.createdAt.toDate().toLocaleString()
+                            : ""}
+                        </small>
                         <ul>
                             ${items.map(i => `
                                 <li>${i.name} (${i.id}) × ${i.qty}</li>
@@ -539,12 +594,13 @@ function renderOrders() {
 }
 
 function renderCart() {
+    const checkoutBtn = document.getElementById("checkoutBtn");
     let html = "";
     let total = 0;
 
     if (cart.length === 0) {
         cartDiv.innerHTML = "<p>Keranjang masih kosong</p>";
-        document.getElementById("checkoutBtn").disabled = true;
+        checkoutBtn.disabled = true;
         return;
     }
 
@@ -573,7 +629,6 @@ function renderCart() {
 
     cartDiv.innerHTML = html;
 
-    const checkoutBtn = document.getElementById("checkoutBtn");
     checkoutBtn.disabled = cart.length === 0;
 }
 
@@ -590,7 +645,10 @@ function update(id, field, value) {
         alert("Nama atau spesifikasi tidak boleh kosong");
         return;
     }
-    db.collection("products").doc(id).update({ [field]: value })
+
+    db.collection("products").doc(id).update({ 
+        [field]: field === "price" ? value : value.trim() 
+    })
     .catch(err => {
         alert("Gagal update produk");
         console.error(err);
@@ -604,8 +662,9 @@ function remove(id) {
 }
 
 function toggleStock(id, currentStock) {
+    const newStock = currentStock > 0 ? 0 : 1;
     db.collection("products").doc(id).update({
-        stock: !currentStock
+        stock: newStock
     });
 }
 
@@ -616,7 +675,10 @@ function addToCart(id) {
         alert("Produk tidak ditemukan atau sudah dihapus");
         return;
     }
-    if (!p.stock) return;
+    if (p.stock <= 0) {
+        alert("Stok produk habis");
+        return;
+    }
 
     const existing = cart.find(i => i.id === p.id);
     if (existing) {
@@ -632,33 +694,40 @@ function addToCart(id) {
     }
 
     renderCart();
+    localStorage.setItem("cart", JSON.stringify(cart));
 }
 
 function removeFromCart(id) {
     cart = cart.filter(i => i.id !== id);
     renderCart();
+    localStorage.setItem("cart", JSON.stringify(cart));
 }
 
 function checkout() {
+    if (isCheckingOut) return;
+    isCheckingOut = true;
+
     const cartSnapshot = [...cart];
     const btn = document.getElementById("checkoutBtn");
     btn.disabled = true;
 
     if (cart.length === 0) {
         alert("🧺 Keranjang masih kosong, silakan pilih produk dulu");
+        isCheckingOut = false;
         btn.disabled = false;
         return;
     }
 
     if (buyerName.value.trim().length < 3) {
         alert("Nama pembeli wajib diisi minimal 3 karakter");
+        isCheckingOut = false;
         btn.disabled = false;
         return;
     }
 
     const order = {
-        buyer: buyerName.value.trim(),
-        note: buyerNote.value || "",
+        buyer: safe(buyerName.value.trim()),
+        note: safe(buyerNote.value || ""),
         items: cartSnapshot.map(i => ({
             id: i.id,
             name: i.name,
@@ -670,19 +739,34 @@ function checkout() {
         status: "baru"
     };
 
+    if (!navigator.onLine) {
+        saveOfflineOrder(order);
+        alert("📴 Kamu offline. Pesanan akan dikirim otomatis saat online.");
+        cart = [];
+        localStorage.removeItem("cart");
+        renderCart();
+        isCheckingOut = false;
+        btn.disabled = false;
+        return;
+    }
+
     db.runTransaction(async tx => {
         for (let item of cartSnapshot) {
             const ref = db.collection("products").doc(item.id);
             const snap = await tx.get(ref);
 
-            if (!snap.exists || !snap.data().stock) {
-                throw new Error(`Produk ${item.name} habis`);
+            if (!snap.exists || snap.data().stock < item.qty) {
+                throw new Error(`Stok produk ${item.name} habis`);
             }
 
-            tx.update(ref, { stock: false });
+            tx.update(ref, { stock: snap.data().stock - item.qty });
         }
 
-        tx.set(db.collection("orders").doc(), order);
+        tx.set(db.collection("orders").doc(), {
+            ...order,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            status: "baru"
+        });
     })
     .then(() => {
         alert("Pesanan berhasil dibuat!");
@@ -711,12 +795,63 @@ Daftar Barang:
         buyerName.value = "";
         buyerNote.value = "";
         document.getElementById("checkoutBtn").disabled = true;
+        isCheckingOut = false;
     })
     .catch(err => {
         alert(err.message);
+        isCheckingOut = false;
         btn.disabled = false;
+        renderCart();
     });
 }
+
+/* ================= ORDER OFFLINE ================= */
+function saveOfflineOrder(order) {
+    const orders = JSON.parse(localStorage.getItem("offlineOrders") || "[]");
+    orders.push(order);
+    localStorage.setItem("offlineOrders", JSON.stringify(orders));
+}
+
+window.addEventListener("online", async () => {
+    let orders = JSON.parse(localStorage.getItem("offlineOrders") || "[]");
+    if (orders.length === 0) return;
+
+    const remaining = [];
+
+    for (let order of orders) {
+        try {
+            await db.runTransaction(async tx => {
+                for (let item of order.items) {
+                    const ref = db.collection("products").doc(item.id);
+                    const snap = await tx.get(ref);
+
+                    if (!snap.exists || snap.data().stock < item.qty) {
+                        throw new Error("Stok tidak mencukupi");
+                    }
+
+                    tx.update(ref, {
+                        stock: snap.data().stock - item.qty
+                    });
+                }
+                tx.set(db.collection("orders").doc(), {
+                    ...order,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                    status: "offline-sync"
+                });
+            });
+        } catch (e) {
+            remaining.push(order);
+        }
+    }
+
+    localStorage.setItem("offlineOrders", JSON.stringify(remaining));
+
+    if (remaining.length === 0) {
+        alert("📦 Semua pesanan offline berhasil dikirim!");
+    } else {
+        alert("⚠️ Beberapa pesanan gagal karena stok habis");
+    }
+});
 
 document.addEventListener("DOMContentLoaded", () => {
     renderMode();
@@ -726,11 +861,20 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 auth.onAuthStateChanged(user => {
-    ordersLoaded = false;
+    if (!user && unsubscribeOrders) {
+        unsubscribeOrders();
+        unsubscribeOrders = null;
+    }
     renderMode();
 });
 
 window.addEventListener("hashchange", renderMode);
+
+window.addEventListener("beforeunload", () => {
+    if (unsubscribeProducts) unsubscribeProducts();
+    if (unsubscribeOrders) unsubscribeOrders();
+});
+
 </script>
 
 <!-- ==================================================
@@ -749,35 +893,69 @@ if ("serviceWorker" in navigator) {
         });
     });
 }
-</script>
 
-<!-- ==================================================
-    SCRIPT PWA INSTALL PROMPT
-================================================== -->
-<script>
+if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.ready.then(reg => {
+        if (reg.waiting) {
+        showUpdateBanner(reg);
+        }
+
+        reg.addEventListener("updatefound", () => {
+        const newWorker = reg.installing;
+        newWorker.addEventListener("statechange", () => {
+            if (
+            newWorker.state === "installed" &&
+            navigator.serviceWorker.controller
+            ) {
+            showUpdateBanner(reg);
+            }
+        });
+        });
+    });
+}
+
+function showUpdateBanner(reg) {
+  const banner = document.getElementById("updateBanner");
+  const btn = document.getElementById("updateBtn");
+
+  banner.style.display = "block";
+
+  btn.onclick = () => {
+    reg.waiting.postMessage({ action: "skipWaiting" });
+  };
+}
+
+navigator.serviceWorker.addEventListener("controllerchange", () => {
+    window.location.reload();
+});
+
+
+/* ===================================================
+    PWA INSTALL PROMPT
+   =================================================== */
 let deferredPrompt;
 
 window.addEventListener("beforeinstallprompt", e => {
     e.preventDefault();
     deferredPrompt = e;
+
+    const installBtn = document.getElementById("installBtn");
+    if (installBtn) {
+        installBtn.style.display = "block";
+    }
     console.log("PWA install prompt ready");
 });
 
 const installBtn = document.getElementById("installBtn");
-
-window.addEventListener("beforeinstallprompt", e => {
-  e.preventDefault();
-  deferredPrompt = e;
-  installBtn.style.display = "block";
-});
-
-installBtn.addEventListener("click", async () => {
-  if (!deferredPrompt) return;
-  deferredPrompt.prompt();
-  const result = await deferredPrompt.userChoice;
-  deferredPrompt = null;
-  installBtn.style.display = "none";
-});
+if (installBtn) {
+    installBtn.addEventListener("click", async () => {
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        const result = await deferredPrompt.userChoice;
+        deferredPrompt = null;
+        installBtn.style.display = "none";
+    });
+}
 </script>
 
 </body>
