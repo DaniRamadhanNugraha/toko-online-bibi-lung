@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <title>Toko Online Bibi Lung</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- ==================================================
+ PWA MANIFEST
+================================================== -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1abc9c">
+
 
 <!-- ==================================================
  CSS : TEMA & GLOBAL
@@ -732,12 +738,46 @@ window.addEventListener("hashchange", renderMode);
 ================================================== -->
 <script>
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js")
-      .then(() => console.log("Service Worker aktif"))
-      .catch(err => console.error("SW gagal:", err));
-  });
+    window.addEventListener("load", () => {
+        navigator.serviceWorker
+        .register("./sw.js")
+        .then(reg => {
+            console.log("Service Worker registered:", reg.scope);
+        })
+        .catch(err => {
+            console.error("SW registration failed:", err);
+        });
+    });
 }
+</script>
+
+<!-- ==================================================
+    SCRIPT PWA INSTALL PROMPT
+================================================== -->
+<script>
+let deferredPrompt;
+
+window.addEventListener("beforeinstallprompt", e => {
+    e.preventDefault();
+    deferredPrompt = e;
+    console.log("PWA install prompt ready");
+});
+
+const installBtn = document.getElementById("installBtn");
+
+window.addEventListener("beforeinstallprompt", e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  installBtn.style.display = "block";
+});
+
+installBtn.addEventListener("click", async () => {
+  if (!deferredPrompt) return;
+  deferredPrompt.prompt();
+  const result = await deferredPrompt.userChoice;
+  deferredPrompt = null;
+  installBtn.style.display = "none";
+});
 </script>
 
 </body>
