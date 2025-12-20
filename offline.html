@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <title>Offline</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1abc9c">
 
 <style>
 body {
@@ -15,14 +16,33 @@ body {
 h1 {
   color: #e67e22;
 }
+button {
+  margin-top: 20px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  background: #1abc9c;
+  color: white;
+  font-size: 16px;
+  cursor: pointer;
+}
+button:active {
+  opacity: 0.8;
+}
 </style>
-
 </head>
 
 <body>
   <h1>📴 Kamu Sedang Offline</h1>
   <p>Silakan periksa koneksi internet.</p>
   <p>Aplikasi akan otomatis normal saat online kembali.</p>
-</body>
 
+  <button onclick="location.reload()">🔄 Coba Lagi</button>
+
+  <script>
+    window.addEventListener("online", () => {
+      location.reload();
+    });
+  </script>
+</body>
 </html>
