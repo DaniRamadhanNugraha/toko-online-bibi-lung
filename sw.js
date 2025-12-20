@@ -1,13 +1,20 @@
-const CACHE_NAME = "bibi-lung-v1";
-const STATIC_CACHE = [
+const CACHE_VERSION = "v2";
+const CACHE_NAME = "bibi-lung-" + CACHE_VERSION;
+const OFFLINE_URL = "./offline.html";
+
+const STATIC_ASSETS = [
   "./",
-  "./index.html"
+  "./index.html",
+  "./offline.html",
+  "./manifest.json",
+  "./icon-192.png",
+  "./icon-512.png"
 ];
 
 // ================= INSTALL =================
 self.addEventListener("install", event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_CACHE))
+    caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS))
   );
   self.skipWaiting();
 });
@@ -27,25 +34,18 @@ self.addEventListener("activate", event => {
 // ================= FETCH =================
 self.addEventListener("fetch", event => {
   const req = event.request;
+  const url = req.url;
 
-  // ⛔ Abaikan non-GET
-  if (req.method !== "GET") return;
-
-  // ⛔ Jangan cache Firebase & WhatsApp
+  // 🚫 Jangan cache Firebase / API
   if (
-    req.url.includes("firestore.googleapis.com") ||
-    req.url.includes("firebaseauth") ||
-    req.url.includes("googleapis.com") ||
-    req.url.includes("wa.me")
+    url.includes("firestore.googleapis.com") ||
+    url.includes("firebaseauth")
   ) {
     return;
   }
 
-  // 🌐 HTML & JS → Network First
-  if (
-    req.headers.get("accept")?.includes("text/html") ||
-    req.url.endsWith(".js")
-  ) {
+  // 🌐 HTML → Network First
+  if (req.headers.get("accept")?.includes("text/html")) {
     event.respondWith(
       fetch(req)
         .then(res => {
@@ -53,22 +53,24 @@ self.addEventListener("fetch", event => {
           caches.open(CACHE_NAME).then(cache => cache.put(req, clone));
           return res;
         })
-        .catch(() => caches.match(req))
+        .catch(() => caches.match(req).then(r => r || caches.match(OFFLINE_URL)))
     );
     return;
   }
 
-  // 🖼️ Asset lain → Cache First
+  // 🎨 CSS / JS / IMAGE → Stale While Revalidate
   event.respondWith(
-    caches.match(req).then(cacheRes => {
-      return (
-        cacheRes ||
-        fetch(req).then(fetchRes => {
-          const clone = fetchRes.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(req, clone));
-          return fetchRes;
+    caches.match(req).then(cached => {
+      const fetchPromise = fetch(req)
+        .then(networkRes => {
+          caches.open(CACHE_NAME).then(cache => {
+            cache.put(req, networkRes.clone());
+          });
+          return networkRes;
         })
-      );
+        .catch(() => cached);
+
+      return cached || fetchPromise;
     })
   );
 });
